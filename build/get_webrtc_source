@@ -4,17 +4,15 @@ run_updates=0
 rootdir="$(cd "$(dirname "$0")"; pwd)"
 revision="src@f183d1d9966b312006e395dc4c270639b35d26de" # Chromium M86
 export PATH="$rootdir/depot_tools:$PATH"
-echo "ENTROU AQUI"
 if [ ! -d "$rootdir/webrtc" ]
 then
 	mkdir -p "$rootdir/webrtc"
 	cd "$rootdir/webrtc"
-	echo linux-arm64 > $(dirname $(which gclient))/.cipd_client_platform
-	export VPYTHON_BYPASS="manually managed python not supported by chrome operations"
-	#mkdir -p bootstrap-3.8.0.chromium.8_bin/python3/bin/
-	#cp --target-directory=bootstrap-3.8.0.chromium.8_bin/python3/bin/ /usr/bin/python3.8
-	#mv bootstrap-3.8.0.chromium.8_bin/python3/bin/python3.8 bootstrap-3.8.0.chromium.8_bin/python3/bin/python
-	#ls bootstrap-3.8.0.chromium.8_bin/python3/bin/
+	if [ $(uname -p) = "aarch64" ]
+	then
+		echo linux-arm64 > $(dirname $(which gclient))/.cipd_client_platform
+		export VPYTHON_BYPASS="manually managed python not supported by chrome operations"
+	fi
 	fetch.py --nohooks webrtc
 	gclient.py sync --nohooks --revision "$revision"
 elif [ "$run_updates" -eq 1 ]
