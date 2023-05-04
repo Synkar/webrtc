@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(webrtc)
 
+find_package(catkin REQUIRED)
+catkin_package()
+
 if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/depot_tools" OR
    NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/webrtc")
     message(STATUS "*********************************************************")
