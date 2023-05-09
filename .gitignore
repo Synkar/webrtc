@@ -1,5 +1,4 @@
-/build/depot_tools
-/build/webrtc
-
-
+build/depot_tools
+build/webrtc
+output/
 webrtc.tar.gz
