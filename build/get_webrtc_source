@@ -3,6 +3,7 @@ set -e
 
 # Chromium branches: https://chromiumdash.appspot.com/branches
 # Chromium M96: https://webrtc.googlesource.com/src.git/+log/refs/branch-heads/4664
+# WebRTC release tag: m96.4664.7ec519c
 revision="src@7ec519c8297828cfcd4c3a3871837ed3008d577e"
 
 run_updates=0
