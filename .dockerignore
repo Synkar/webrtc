@@ -1,5 +1,0 @@
-.gitignore
-build.sh
-Dockerfile
-export.sh
-output/
