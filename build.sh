@@ -1,5 +1,6 @@
 #!/bin/bash
 
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 # Select build image
 build_image="webrtc_build"
 docker image inspect $build_image >/dev/null 2>&1
@@ -12,7 +13,7 @@ fi
 # Run the build
 docker run -it \
   --name webrtc_build \
-  -v .:/source \
+  -v $SCRIPT_DIR:/source \
   --workdir /workspace \
   $build_image \
   /bin/bash -c "/source/build/ros_build /workspace /opt"

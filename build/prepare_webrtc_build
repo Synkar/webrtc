@@ -26,5 +26,20 @@ case "$a" in
 	;;
 esac
 cd "$rootdir/webrtc/src"
-gn gen "$1" --args="is_debug=false is_clang=false is_desktop_linux=true use_system_libjpeg=true treat_warnings_as_errors=false fatal_linker_warnings=false use_gio=false use_rtti=true rtc_enable_protobuf=false rtc_include_tests=true use_sysroot=false use_custom_libcxx=false rtc_build_json=true symbol_level=0 target_os=\"linux\" host_cpu=\"$a\" current_cpu=\"$a\" target_cpu=\"$a\"$extras"
+gn gen "$1" --args="is_debug=false is_clang=false use_system_libjpeg=true treat_warnings_as_errors=false fatal_linker_warnings=false use_gio=false use_rtti=true rtc_enable_protobuf=false rtc_include_tests=false use_sysroot=false use_custom_libcxx=false
+symbol_level=0 target_os=\"linux\" host_cpu=\"$a\" current_cpu=\"$a\" target_cpu=\"$a\"$extras
+
+disable_libfuzzer=true enable_iterator_debugging=false exclude_unwind_tables=true
+libyuv_disable_jpeg=true
+libyuv_include_tests=false
+rtc_build_json=false
+rtc_libvpx_build_vp9=false
+rtc_build_opus=false
+rtc_include_opus=false
+rtc_build_libevent=false
+rtc_enable_libevent=false
+rtc_include_ilbc=false
+use_aura=false
+rtc_include_pulse_audio=false
+rtc_use_dummy_audio_file_devices=true"
 
