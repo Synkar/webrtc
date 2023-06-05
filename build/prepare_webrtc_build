@@ -30,6 +30,7 @@ gn gen "$1" --args="is_debug=false is_clang=false use_system_libjpeg=true treat_
 symbol_level=0 target_os=\"linux\" host_cpu=\"$a\" current_cpu=\"$a\" target_cpu=\"$a\"$extras
 
 disable_libfuzzer=true enable_iterator_debugging=false exclude_unwind_tables=true
+rtc_use_gtk=false
 libyuv_disable_jpeg=true
 libyuv_include_tests=false
 rtc_build_json=false

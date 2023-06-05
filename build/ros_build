@@ -31,5 +31,5 @@ rosdep install --default-yes --ignore-packages-from-source --from-paths "$packag
   --install-space "$install_path/webrtc"
 
 # Export archive
-version=$(cat $source_path/package.xml | grep "<webrtc_version>" | sed 's|\ *<\/*webrtc_version>\ *||g')
+version=$(cat $source_path/package.xml | grep "<build_number>" | sed 's|\ *<\/*build_number>\ *||g')
 tar -czvf $source_path/output/webrtc-$version.tar.gz -C $install_path webrtc

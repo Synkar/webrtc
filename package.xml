@@ -18,16 +18,13 @@
   <buildtool_depend>git</buildtool_depend>
   <buildtool_depend>cmake</buildtool_depend>
   <buildtool_depend>wget</buildtool_depend>
-  <depend>gtk2</depend>
   <depend>gtk3</depend>
-  <depend>libasound2-dev</depend>
   <depend>libglib-dev</depend>
   <depend>libjpeg</depend>
-  <depend>libpulse-dev</depend>
   <depend>python3-httplib2</depend>
 
   <export>
     <build_type>cmake</build_type>
-    <webrtc_version>m96.4664.e3bec45</webrtc_version>
+    <build_number>m96.4664.e3bec45.1</build_number>
   </export>
 </package>

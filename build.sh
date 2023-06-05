@@ -10,6 +10,8 @@ if [ $? -ne 0 ]; then
   build_image="ros:noetic-ros-base"
 fi
 
+# Removes old container. Container may exist if the previous build failed.
+docker rm webrtc_build
 # Run the build
 docker run -it \
   --name webrtc_build \
