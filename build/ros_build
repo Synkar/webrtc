@@ -5,15 +5,12 @@ build_folder=$(dirname "$(readlink -f "$0")")
 source_path=$(realpath "$build_folder/..")
 
 package_path=${1:-"$source_path"}
-install_path=${2:-"/tmp"}
 
 if ! [ "$source_path" -ef "$package_path" ]; then
   echo "Copying files to the package path $package_path"
   mkdir -p "$package_path"
   cp -r "$source_path"/* "$package_path"
 fi
-
-mkdir -p "$install_path/webrtc"
 
 # Install package dependencies
 update-alternatives --install /usr/bin/python python /usr/bin/python3 3
@@ -24,12 +21,33 @@ fi
 rosdep update --include-eol-distros --rosdistro $ROS_DISTRO
 rosdep install --default-yes --ignore-packages-from-source --from-paths "$package_path"
 
+version=$(cat $source_path/package.xml | grep "<build_number>" | sed 's|\ *<\/*build_number>\ *||g')
+
+temp_install_path="/tmp/webrtc"
+mkdir -p "$temp_install_path"
+
 # Build package
 /ros_entrypoint.sh catkin_make_isolated \
   --source "$package_path" \
   --install \
-  --install-space "$install_path/webrtc"
+  --install-space "$temp_install_path"
 
-# Export archive
-version=$(cat $source_path/package.xml | grep "<build_number>" | sed 's|\ *<\/*build_number>\ *||g')
-tar -czvf $source_path/output/webrtc-$version.tar.gz -C $install_path webrtc
+# Prepare directory in debian package format
+deb_name="webrtc_${version}_amd64"
+deb_path="/tmp/$deb_name"
+mkdir -p $deb_path/DEBIAN
+
+echo "Package: webrtc
+Version: $version
+Architecture: amd64
+Maintainer: Thiago <thiago.henrique@synkar.com>
+Description: WebRTC Native API" > $deb_path/DEBIAN/control
+
+deb_ros_path="$deb_path/opt/ros/noetic"
+mkdir -p $deb_ros_path
+cp -r "$temp_install_path/include" "$deb_ros_path"
+cp -r "$temp_install_path/lib" "$deb_ros_path"
+cp -r "$temp_install_path/share" "$deb_ros_path"
+
+# Create and export debian package
+dpkg-deb --build --root-owner-group $deb_path "$source_path/output/$deb_name.deb"

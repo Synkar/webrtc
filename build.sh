@@ -18,7 +18,7 @@ docker run -it \
   -v $SCRIPT_DIR:/source \
   --workdir /workspace \
   $build_image \
-  /bin/bash -c "/source/build/ros_build /workspace /opt"
+  /bin/bash -c "/source/build/ros_build /workspace"
 
 # Save image to reuse on later builds
 docker commit webrtc_build webrtc_build
