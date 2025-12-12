@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 import argparse
 import os
 import shutil
@@ -17,37 +17,103 @@ try:
 except OSError:
     pass
 
+# Parse webrtc.ninja for compiler definitions
 vars = {}
-with open(os.path.join(args.build_dir, "obj", "webrtc.ninja"), "r") as f:
-    for line in iter(f):
-        mo = re.match("(\w+) = (.*)\n", line)
-        if mo:
-            vars[mo.group(1)] = mo.group(2).strip()
+ninja_file = os.path.join(args.build_dir, "obj", "webrtc.ninja")
+if os.path.exists(ninja_file):
+    with open(ninja_file, "r") as f:
+        for line in iter(f):
+            mo = re.match(r"(\w+) = (.*)\n", line)
+            if mo:
+                vars[mo.group(1)] = mo.group(2).strip()
 
-webrtc_defs = [d for d in vars["defines"].split(' ') if d.startswith("-D")]
-webrtc_libs = ["webrtc"]
+webrtc_defs = []
+if "defines" in vars:
+    webrtc_defs = [d for d in vars["defines"].split(' ') if d.startswith("-D")]
 
-for root, dirs, files in os.walk(os.path.join(args.build_dir, "obj")):
+# Collect all static libraries
+webrtc_core_libs = []      # Main webrtc libraries
+webrtc_api_libs = []       # API libraries
+webrtc_codec_libs = []     # Codec-related libraries  
+webrtc_other_libs = []     # Other webrtc libraries
+third_party_libs = []      # Third-party libraries (abseil, etc.)
+
+def copy_lib(src_path, name):
+    """Copy a library and return True if successful"""
+    dst_path = os.path.join(args.output_dir, "lib" + name + ".a")
+    try:
+        shutil.copy2(src_path, dst_path)
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to copy {src_path}: {e}")
+        return False
+
+# Walk through the entire obj directory
+obj_dir = os.path.join(args.build_dir, "obj")
+for root, dirs, files in os.walk(obj_dir):
     libs = [f for f in files if f.startswith("lib") and f.endswith(".a")]
-    for l in libs:
-        name = l[3:-2]
-        if not name.startswith("webrtc"):
-            name = "webrtc_" + name
-        shutil.copy2(os.path.join(args.build_dir, "obj", "webrtc", root, l), os.path.join(args.output_dir, "lib" + name + ".a"))
-        if name not in webrtc_libs:
-            webrtc_libs.append(name)
+    for lib_file in libs:
+        src_path = os.path.join(root, lib_file)  # FIXED: root is already absolute
+        base_name = lib_file[3:-2]  # Remove "lib" prefix and ".a" suffix
+        
+        # Determine the relative path from obj_dir for categorization
+        rel_path = os.path.relpath(root, obj_dir)
+        
+        if rel_path.startswith("third_party"):
+            # Third-party library
+            name = "webrtc_ext_" + base_name
+            if copy_lib(src_path, name):
+                third_party_libs.append(name)
+        else:
+            # WebRTC library
+            if not base_name.startswith("webrtc"):
+                name = "webrtc_" + base_name
+            else:
+                name = base_name
+            
+            if copy_lib(src_path, name):
+                # Categorize for link ordering
+                if "api" in rel_path or "video_codecs" in base_name:
+                    webrtc_api_libs.append(name)
+                elif "codec" in base_name.lower() or "encoder" in base_name.lower() or "decoder" in base_name.lower() or "vp8" in base_name.lower() or "vp9" in base_name.lower() or "h264" in base_name.lower() or "av1" in base_name.lower():
+                    webrtc_codec_libs.append(name)
+                elif name == "webrtc":
+                    webrtc_core_libs.append(name)
+                else:
+                    webrtc_other_libs.append(name)
 
-for root, dirs, files in os.walk(os.path.join(args.build_dir, "obj", "third_party")):
-    libs = [f for f in files if f.startswith("lib") and f.endswith(".a")]
-    for l in libs:
-        name = "webrtc_ext_" + l[3:-2]
-        shutil.copy2(os.path.join(args.build_dir, "obj", "webrtc", root, l), os.path.join(args.output_dir, "lib" + name + ".a"))
-        if name not in webrtc_libs:
-            webrtc_libs.append(name)
+# Build the library list in proper link order
+# Order: API libs -> codec libs -> other libs -> core lib -> third party
+webrtc_libs = []
+webrtc_libs.extend(webrtc_api_libs)
+webrtc_libs.extend(webrtc_codec_libs)
+webrtc_libs.extend(webrtc_other_libs)
+webrtc_libs.extend(webrtc_core_libs)
+webrtc_libs.extend(third_party_libs)
 
+# Remove duplicates while preserving order
+seen = set()
+webrtc_libs_unique = []
+for lib in webrtc_libs:
+    if lib not in seen:
+        seen.add(lib)
+        webrtc_libs_unique.append(lib)
+webrtc_libs = webrtc_libs_unique
+
+# Add system libraries
+system_libs = []
 if "-DHAVE_PTHREAD" in webrtc_defs:
-    webrtc_libs.append("pthread")
+    system_libs.append("pthread")
+system_libs.extend(["dl", "rt"])  # Common dependencies
 
+print(f"Collected {len(webrtc_libs)} WebRTC/third-party libraries")
+print(f"  API libs: {len(webrtc_api_libs)}")
+print(f"  Codec libs: {len(webrtc_codec_libs)}")
+print(f"  Other libs: {len(webrtc_other_libs)}")
+print(f"  Core libs: {len(webrtc_core_libs)}")
+print(f"  Third-party libs: {len(third_party_libs)}")
+
+# Generate webrtcConfig.cmake
 with open(os.path.join(args.output_dir, "webrtcConfig.cmake"), "w") as config:
     config.write('''\
 set(webrtc_INSTALL_PREFIX "${CMAKE_CURRENT_LIST_DIR}")
@@ -55,33 +121,52 @@ get_filename_component(webrtc_INSTALL_PREFIX "${webrtc_INSTALL_PREFIX}" PATH)
 get_filename_component(webrtc_INSTALL_PREFIX "${webrtc_INSTALL_PREFIX}" PATH)
 get_filename_component(webrtc_INSTALL_PREFIX "${webrtc_INSTALL_PREFIX}" PATH)
 
-set(webrtc_INCLUDE_DIRS "${webrtc_INSTALL_PREFIX}/include;${webrtc_INSTALL_PREFIX}/include/webrtc/3rdparty;${webrtc_INSTALL_PREFIX}/include/webrtc")
+set(webrtc_INCLUDE_DIRS 
+    "${webrtc_INSTALL_PREFIX}/include"
+    "${webrtc_INSTALL_PREFIX}/include/webrtc"
+    "${webrtc_INSTALL_PREFIX}/include/webrtc/3rdparty"
+)
 set(webrtc_DEFINITIONS "%(defs)s")
-set(webrtc_LIBRARIES "%(libs)s")
+
+# Use linker groups to handle circular dependencies between static libraries
+# This is equivalent to: -Wl,--start-group ... -Wl,--end-group
+set(webrtc_LIBRARIES
+    -Wl,--start-group
+    %(libs)s
+    -Wl,--end-group
+    %(syslibs)s
+)
 ''' % {
     "defs": ' '.join(webrtc_defs),
-    "libs": ';'.join(webrtc_libs)
+    "libs": '\n    '.join(['"${webrtc_INSTALL_PREFIX}/lib/lib%s.a"' % lib for lib in webrtc_libs]),
+    "syslibs": ' '.join(system_libs)
 })
-    for lib in webrtc_libs:
-        if os.path.isfile(os.path.join(args.output_dir, "lib" + lib + ".a")):
-            config.write('''
-add_library(%(name)s STATIC IMPORTED)
-set_property(TARGET %(name)s PROPERTY IMPORTED_LOCATION "${webrtc_INSTALL_PREFIX}/lib/lib%(name)s.a")
-''' % {"name": lib})
 
-
+# Generate make_install.cmake
 with open(os.path.join(args.output_dir, "make_install.cmake"), "w") as installer:
     installer.write('set(_webrtc_build "%s")\n' % args.build_dir)
     installer.write('set(_webrtc_out "%s")\n' % args.output_dir)
+    
     for lib in webrtc_libs:
-        if os.path.isfile(os.path.join(args.output_dir, "lib" + lib + ".a")):
+        lib_path = os.path.join(args.output_dir, "lib" + lib + ".a")
+        if os.path.isfile(lib_path):
             installer.write('file(INSTALL "${_webrtc_out}/lib%s.a" DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" USE_SOURCE_PERMISSIONS)\n' % lib)
+    
     for tool in ["stunserver", "turnserver", "relayserver"]:
-        if os.path.isfile(os.path.join(args.build_dir, tool)):
+        tool_path = os.path.join(args.build_dir, tool)
+        if os.path.isfile(tool_path):
             installer.write('file(INSTALL "${_webrtc_build}/%s" DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/webrtc" USE_SOURCE_PERMISSIONS)\n' % tool)
+    
+    # Install generated headers
     gen_dir = os.path.join(args.build_dir, "gen")
-    for root, dirs, files in os.walk(os.path.join(gen_dir, "webrtc")):
-        h_files = [f for f in files if f.endswith(".h")]
-        if h_files:
-            installer.write('file(INSTALL ' + ' '.join(['"${_webrtc_build}/%s"' % os.path.relpath(os.path.join(root, h), args.build_dir) for h in h_files]) + ' DESTINATION "${CMAKE_INSTALL_PREFIX}/include/%s")\n' % root[len(gen_dir) + 1:])
+    if os.path.isdir(gen_dir):
+        for root, dirs, files in os.walk(os.path.join(gen_dir, "webrtc")):
+            h_files = [f for f in files if f.endswith(".h")]
+            if h_files:
+                rel_dir = os.path.relpath(root, gen_dir)
+                installer.write('file(INSTALL %s DESTINATION "${CMAKE_INSTALL_PREFIX}/include/%s")\n' % (
+                    ' '.join(['"${_webrtc_build}/%s"' % os.path.relpath(os.path.join(root, h), args.build_dir) for h in h_files]),
+                    rel_dir
+                ))
 
+print(f"Generated webrtcConfig.cmake and make_install.cmake in {args.output_dir}")

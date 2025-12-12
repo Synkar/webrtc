@@ -70,7 +70,7 @@ if(NOT ${prepare_webrtc_build_result} EQUAL 0)
 endif()
 
 add_custom_target(webrtc ALL
-    COMMAND "build/depot_tools/ninja" -C "${CMAKE_CURRENT_BINARY_DIR}/ninja" webrtc stunserver turnserver
+    COMMAND "build/depot_tools/ninja" -C "${CMAKE_CURRENT_BINARY_DIR}/ninja" webrtc api/video_codecs:builtin_video_encoder_factory api/video_codecs:builtin_video_decoder_factory
     COMMAND "build/update_cmake_config" "${CMAKE_CURRENT_SOURCE_DIR}/build/webrtc/src" "${CMAKE_CURRENT_BINARY_DIR}/ninja" "${CMAKE_CURRENT_BINARY_DIR}/output" "${CMAKE_INSTALL_PREFIX}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
@@ -99,7 +99,7 @@ install(
 install(
     DIRECTORY "build/webrtc/src/third_party/abseil-cpp/"
     DESTINATION "include/webrtc"
-    FILES_MATCHING PATTERN "*.h"
+    FILES_MATCHING PATTERN "*.h" PATTERN "*.inc"
 )
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/output/make_install.cmake")
 

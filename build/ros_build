@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+export PATH="/workspace/build/depot_tools:$PATH"
+
+# Webrtc now requires gcc>=10 to build
+apt-get update
+sudo apt install -y software-properties-common
+add-apt-repository -y ppa:ubuntu-toolchain-r/test
+apt-get update
+apt-get install -y gcc-10 g++-10
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 60
+update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 60
+
 build_folder=$(dirname "$(readlink -f "$0")")
 source_path=$(realpath "$build_folder/..")
 
@@ -12,12 +23,15 @@ if ! [ "$source_path" -ef "$package_path" ]; then
   cp -r "$source_path"/* "$package_path"
 fi
 
+# Using offline rosdistro to prevent Error 429: Too Many Requests
+export ROSDISTRO_INDEX_URL="file://$source_path/rosdistro/index-v4.yaml"
+
 # Install package dependencies
 update-alternatives --install /usr/bin/python python /usr/bin/python3 3
 apt-get update
-if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
-  rosdep init;
-fi
+echo "# local-only; real entries in 50-local.list" > /etc/ros/rosdep/sources.list.d/20-default.list
+echo "yaml file://$source_path/rosdistro/rosdep/base.yaml" >> /etc/ros/rosdep/sources.list.d/50-local.list
+echo "yaml file://$source_path/rosdistro/rosdep/python.yaml" >> /etc/ros/rosdep/sources.list.d/50-local.list
 rosdep update --include-eol-distros --rosdistro $ROS_DISTRO
 rosdep install --default-yes --ignore-packages-from-source --from-paths "$package_path"
 
@@ -25,6 +39,8 @@ version=$(cat $source_path/package.xml | grep "<build_number>" | sed 's|\ *<\/*b
 
 temp_install_path="/tmp/webrtc"
 mkdir -p "$temp_install_path"
+
+export PATH="/workspace/build/depot_tools:$PATH"
 
 # Build package
 /ros_entrypoint.sh catkin_make_isolated \
@@ -50,4 +66,6 @@ cp -r "$temp_install_path/lib" "$deb_ros_path"
 cp -r "$temp_install_path/share" "$deb_ros_path"
 
 # Create and export debian package
-dpkg-deb --build --root-owner-group $deb_path "$source_path/output/$deb_name.deb"
+output_dir="$source_path/output"
+mkdir -p "$output_dir"
+dpkg-deb --build --root-owner-group "$deb_path" "$output_dir/$deb_name.deb"

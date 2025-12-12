@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>webrtc</name>
-  <version>96.4664.4</version>
+  <version>144.7559.0</version>
   <description>WebRTC Native API</description>
 
   <author email="mwills@wpi.edu">Mitchell Wills</author>
@@ -25,6 +25,6 @@
 
   <export>
     <build_type>cmake</build_type>
-    <build_number>96.4664.e3bec45-2</build_number>
+    <build_number>144.7559.f680c18</build_number>
   </export>
 </package>

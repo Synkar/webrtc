@@ -2,13 +2,13 @@
 set -e
 
 # Chromium branches: https://chromiumdash.appspot.com/branches
-# Chromium M96: https://webrtc.googlesource.com/src.git/+log/refs/branch-heads/4664
-# WebRTC release tag: m96.4664.e3bec45
-revision="src@e3bec45d0af4a042de14f7a009ab7dd3c96d1ca7"
+# Chromium M144: https://webrtc.googlesource.com/src.git/+log/refs/branch-heads/7559
+# WebRTC release tag: m144.7559.f680c18
+revision="src@f680c1893f3b166b370439da52ae82d02f54969c"
 
 run_updates=0
 rootdir="$(cd "$(dirname "$0")"; pwd)"
-export PATH="$rootdir/depot_tools:$PATH"
+export PATH="/workspace/build/depot_tools:$PATH"
 if [ ! -d "$rootdir/webrtc" ]
 then
 	mkdir -p "$rootdir/webrtc"
@@ -25,3 +25,45 @@ then
 	cd "$rootdir/webrtc"
 	gclient.py sync --nohooks --revision "$revision"
 fi
+
+# ==========================================================
+# GCC 10 Compatibility Patches
+# ==========================================================
+# GCC 10 doesn't support C++20 'using enum' declarations.
+# Patching files to use fully qualified enum names instead.
+# ==========================================================
+
+echo "Applying GCC 10 compatibility patches..."
+
+webrtc_src="$rootdir/webrtc/src"
+
+# Patch rtp_format.cc - PacketizationFormat enum
+rtp_format_file="$webrtc_src/modules/rtp_rtcp/source/rtp_format.cc"
+if [ -f "$rtp_format_file" ]; then
+    if grep -q "using enum PacketizationFormat;" "$rtp_format_file"; then
+        echo "Patching $rtp_format_file..."
+        sed -i 's/using enum PacketizationFormat;//' "$rtp_format_file"
+        sed -i 's/case kRaw:/case PacketizationFormat::kRaw:/g' "$rtp_format_file"
+        sed -i 's/case kH264:/case PacketizationFormat::kH264:/g' "$rtp_format_file"
+        sed -i 's/case kH265:/case PacketizationFormat::kH265:/g' "$rtp_format_file"
+        sed -i 's/case kVP8:/case PacketizationFormat::kVP8:/g' "$rtp_format_file"
+        sed -i 's/case kVP9:/case PacketizationFormat::kVP9:/g' "$rtp_format_file"
+        sed -i 's/case kAV1:/case PacketizationFormat::kAV1:/g' "$rtp_format_file"
+        sed -i 's/case kGeneric:/case PacketizationFormat::kGeneric:/g' "$rtp_format_file"
+    fi
+fi
+
+# Patch rtp_transport_controller_send.cc - EcnMarking enum
+rtp_transport_file="$webrtc_src/call/rtp_transport_controller_send.cc"
+if [ -f "$rtp_transport_file" ]; then
+    if grep -q "using enum EcnMarking;" "$rtp_transport_file"; then
+        echo "Patching $rtp_transport_file..."
+        sed -i 's/using enum EcnMarking;//' "$rtp_transport_file"
+        sed -i 's/case kNotEct:/case EcnMarking::kNotEct:/g' "$rtp_transport_file"
+        sed -i 's/case kEct1:/case EcnMarking::kEct1:/g' "$rtp_transport_file"
+        sed -i 's/case kEct0:/case EcnMarking::kEct0:/g' "$rtp_transport_file"
+        sed -i 's/case kCe:/case EcnMarking::kCe:/g' "$rtp_transport_file"
+    fi
+fi
+
+echo "GCC 10 compatibility patches applied."

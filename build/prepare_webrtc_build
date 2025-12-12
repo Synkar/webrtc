@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 rootdir="$(cd "$(dirname "$0")"; pwd)"
-export PATH="$rootdir/depot_tools:$PATH"
+export PATH="/workspace/build/depot_tools:$PATH"
 
 a="$(dpkg-architecture -qDEB_BUILD_ARCH || uname -m)"
 case "$a" in
@@ -30,17 +30,66 @@ gn gen "$1" --args="is_debug=false is_clang=false use_system_libjpeg=true treat_
 symbol_level=0 target_os=\"linux\" host_cpu=\"$a\" current_cpu=\"$a\" target_cpu=\"$a\"$extras
 
 disable_libfuzzer=true enable_iterator_debugging=false exclude_unwind_tables=true
-rtc_use_gtk=false
 libyuv_disable_jpeg=true
 libyuv_include_tests=false
 rtc_build_json=false
 rtc_libvpx_build_vp9=false
 rtc_build_opus=false
 rtc_include_opus=false
-rtc_build_libevent=false
-rtc_enable_libevent=false
-rtc_include_ilbc=false
 use_aura=false
 rtc_include_pulse_audio=false
 rtc_use_dummy_audio_file_devices=true"
 
+# =============================================================================
+# PATCH: Remove thin archive flag (-T) from ninja files to create fat archives
+# This is necessary because thin archives only contain references to .o files,
+# which break when the archives are moved to a different location (e.g., .deb)
+# =============================================================================
+
+echo "Patching ninja files to disable thin archives..."
+
+BUILD_DIR="$1"
+
+# Find all ninja files that might contain ar commands
+# The thin archive flag appears as either:
+#   1. "ar rcsT" or "ar crsT" (T flag inline)
+#   2. "arflags = -T" (as a variable)
+
+# Patch toolchain ninja files
+find "$BUILD_DIR" -name "*.ninja" -type f | while read -r ninja_file; do
+    if grep -q 'arflags = -T' "$ninja_file" 2>/dev/null; then
+        echo "  Patching arflags in: $ninja_file"
+        sed -i 's/arflags = -T/arflags =/g' "$ninja_file"
+    fi
+    
+    # Also handle cases where -T is part of arflags with other flags
+    if grep -q 'arflags = .*-T' "$ninja_file" 2>/dev/null; then
+        echo "  Patching arflags (with other flags) in: $ninja_file"
+        sed -i 's/\(arflags = .*\)-T\(.*\)/\1\2/g' "$ninja_file"
+    fi
+    
+    # Handle inline T flag in ar commands: "ar rcsT" -> "ar rcs"
+    if grep -qE '\bar [a-z]*T[a-z]* ' "$ninja_file" 2>/dev/null; then
+        echo "  Patching inline ar flags in: $ninja_file"
+        # This handles patterns like "ar rcsT " or "ar crsT " etc.
+        sed -i -E 's/\bar ([a-z]*)T([a-z]*) /ar \1\2 /g' "$ninja_file"
+    fi
+done
+
+# Specifically check the main build.ninja and toolchain files
+for ninja_file in "$BUILD_DIR/build.ninja" "$BUILD_DIR/toolchain.ninja"; do
+    if [ -f "$ninja_file" ]; then
+        if grep -q 'T' "$ninja_file" && grep -q '\bar ' "$ninja_file"; then
+            echo "  Double-checking: $ninja_file"
+        fi
+    fi
+done
+
+echo "Thin archive patching complete."
+
+# Verify the patch worked
+if grep -r 'arflags = -T' "$BUILD_DIR"/*.ninja 2>/dev/null; then
+    echo "WARNING: Some ninja files may still have thin archive flags!"
+else
+    echo "Verification: No thin archive flags found in top-level ninja files."
+fi
