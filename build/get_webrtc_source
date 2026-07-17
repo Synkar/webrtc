@@ -9,21 +9,39 @@ revision="src@f680c1893f3b166b370439da52ae82d02f54969c"
 run_updates=0
 rootdir="$(cd "$(dirname "$0")"; pwd)"
 export PATH="/workspace/build/depot_tools:$PATH"
-if [ ! -d "$rootdir/webrtc" ]
+
+# gsutil (used by gclient for GCS-hosted deps) requires python >= 3.9
+if python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] < (3, 9) else 1)'
+then
+	if ! command -v python3.9 >/dev/null
+	then
+		apt-get update
+		apt-get install -y python3.9 python3.9-distutils
+	fi
+	mkdir -p /opt/py39-shim
+	ln -sf "$(command -v python3.9)" /opt/py39-shim/python3
+	export PATH="/opt/py39-shim:$PATH"
+fi
+
+if [ $(uname -p) = "aarch64" ]
+then
+	echo linux-arm64 > $(dirname $(which gclient))/.cipd_client_platform
+	export VPYTHON_BYPASS="manually managed python not supported by chrome operations"
+fi
+
+if [ ! -f "$rootdir/webrtc/.gclient" ]
 then
 	mkdir -p "$rootdir/webrtc"
 	cd "$rootdir/webrtc"
-	if [ $(uname -p) = "aarch64" ]
-	then
-		echo linux-arm64 > $(dirname $(which gclient))/.cipd_client_platform
-		export VPYTHON_BYPASS="manually managed python not supported by chrome operations"
-	fi
 	fetch.py --nohooks webrtc
 	gclient.py sync --nohooks --revision "$revision"
-elif [ "$run_updates" -eq 1 ]
+	touch "$rootdir/webrtc/.sync_done"
+elif [ ! -f "$rootdir/webrtc/.sync_done" ] || [ "$run_updates" -eq 1 ]
 then
+	# Resume an interrupted checkout
 	cd "$rootdir/webrtc"
 	gclient.py sync --nohooks --revision "$revision"
+	touch "$rootdir/webrtc/.sync_done"
 fi
 
 # ==========================================================
@@ -65,5 +83,75 @@ if [ -f "$rtp_transport_file" ]; then
         sed -i 's/case kCe:/case EcnMarking::kCe:/g' "$rtp_transport_file"
     fi
 fi
+
+# GCC forwards -march verbatim to gas, and binutils 2.34 only accepts the
+# dotprod/i8mm extensions on an armv8.2-a base. The kernels are runtime
+# dispatched, so the higher baseline only affects CPUs that never run them.
+sed -i 's/-march=armv8-a+dotprod+i8mm/-march=armv8.2-a+dotprod+i8mm/' \
+    "$webrtc_src/third_party/libyuv/BUILD.gn"
+
+# Ninja auto-reruns gn gen when BUILD.gn files change, which would silently
+# restore the thin-archive flags patched out by prepare_webrtc_build. Remove
+# the -T arflags at the source instead (the -s/-S index flags may stay).
+sed -i '/^      "-T",$/d' "$webrtc_src/build/config/compiler/BUILD.gn"
+
+# libvpx SVE/SVE2 kernels need arm_neon_sve_bridge.h and armv9 support,
+# both missing in gcc 10. Drop the targets and disable them in the runtime
+# dispatch config so no dangling references remain.
+python3 - "$webrtc_src/third_party/libvpx/BUILD.gn" <<'PYEOF'
+import sys
+path = sys.argv[1]
+orig = open(path).read()
+s = orig.replace('''  if (!is_win) {
+    source_set("libvpx_intrinsics_sve")''',
+'''  if (!is_win && is_clang) {
+    source_set("libvpx_intrinsics_sve")''')
+s = s.replace('''    if (!is_win) {
+      deps += [
+        ":libvpx_intrinsics_sve",''',
+'''    if (!is_win && is_clang) {
+      deps += [
+        ":libvpx_intrinsics_sve",''')
+if s != orig:
+    open(path, 'w').write(s)
+PYEOF
+for cfg in linux/arm64 linux/arm64-highbd; do
+    sed -i 's/#define HAVE_SVE 1/#define HAVE_SVE 0/; s/#define HAVE_SVE2 1/#define HAVE_SVE2 0/' \
+        "$webrtc_src/third_party/libvpx/source/config/$cfg/vpx_config.h"
+    sed -i 's/^\.equ HAVE_SVE ,  1/.equ HAVE_SVE ,  0/; s/^\.equ HAVE_SVE2 ,  1/.equ HAVE_SVE2 ,  0/' \
+        "$webrtc_src/third_party/libvpx/source/config/$cfg/vpx_config.asm"
+done
+
+# Same for libaom
+python3 - "$webrtc_src/third_party/libaom/BUILD.gn" <<'PYEOF'
+import sys
+path = sys.argv[1]
+orig = open(path).read()
+s = orig.replace('''  if (!is_win) {
+    source_set("libaom_intrinsics_sve")''',
+'''  if (!is_win && is_clang) {
+    source_set("libaom_intrinsics_sve")''')
+s = s.replace('''    if (!is_win) {
+      deps += [
+        ":libaom_intrinsics_sve",''',
+'''    if (!is_win && is_clang) {
+      deps += [
+        ":libaom_intrinsics_sve",''')
+if s != orig:
+    open(path, 'w').write(s)
+PYEOF
+aom_cfg="$webrtc_src/third_party/libaom/source/config/linux/arm64-cpu-detect/config"
+sed -i 's/#define HAVE_SVE 1/#define HAVE_SVE 0/; s/#define HAVE_SVE2 1/#define HAVE_SVE2 0/' "$aom_cfg/aom_config.h"
+sed -i 's/^HAVE_SVE equ 1/HAVE_SVE equ 0/; s/^HAVE_SVE2 equ 1/HAVE_SVE2 equ 0/' "$aom_cfg/aom_config.asm"
+
+# The pre-generated arm64 rtcd dispatch headers reference the SVE kernels
+# unconditionally (runtime-dispatched); strip the entries since the kernels
+# are no longer compiled. Non-SVE fallbacks remain the dispatch defaults.
+for f in \
+    "$aom_cfg"/*_rtcd.h \
+    "$webrtc_src/third_party/libvpx/source/config/linux/arm64"/*_rtcd.h \
+    "$webrtc_src/third_party/libvpx/source/config/linux/arm64-highbd"/*_rtcd.h; do
+    sed -i '/_sve/d' "$f"
+done
 
 echo "GCC 10 compatibility patches applied."

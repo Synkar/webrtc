@@ -19,7 +19,8 @@ case "$a" in
 	;;
 	arm64|aarch64)
 		a=arm64
-		extras=""
+		# SVE/SME kernels need -march=armv9-a, unsupported by gcc 10
+		extras=" libyuv_use_sve=false libyuv_use_sme=false"
 	;;
 	*)
 		echo>&2 "WARNING: Unknown target platform: $a, continuing anyway"

@@ -1,4 +1,9 @@
 build/depot_tools
+build/ninja
 build/webrtc
+build_isolated/
+devel_isolated/
+.catkin_workspace
 output/
 webrtc.tar.gz
+/build-arm64.log
